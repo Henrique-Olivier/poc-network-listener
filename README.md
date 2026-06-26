@@ -1,4 +1,4 @@
-# Lib Escutadora de Rede
+# Network Listener
 
 POC de uma biblioteca leve e agnostica de framework para observar requisicoes HTTP no front-end e produzir diagnosticos provaveis sobre lentidao, erro ou instabilidade.
 
@@ -68,7 +68,11 @@ Exemplo de retorno:
   summary: {
     requestCount: 20,
     errorRate: 0,
+    clientErrorRate: 0,
+    serverErrorRate: 0,
+    networkErrorRate: 0,
     timeoutRate: 0,
+    abortedRate: 0,
     slowRequestRate: 0.35,
     medianDurationMs: 700,
     p95DurationMs: 2300,

@@ -10,15 +10,34 @@ var DEFAULT_SLOW_REQUEST_THRESHOLD_MS = 1500;
 var DEFAULT_MAX_SAMPLES = 20;
 var DEFAULT_MINIMUM_SAMPLES_TO_DIAGNOSE = 5;
 var DEFAULT_TIMEOUT_THRESHOLD_MS = 30000;
+var DEFAULT_WIDESPREAD_AFFECTED_ENDPOINT_RATIO = 0.6;
+var DEFAULT_SPECIFIC_ENDPOINT_RATIO_THRESHOLD = 0.3;
+var DEFAULT_HIGH_SERVER_ERROR_RATE = 0.2;
+var DEFAULT_HIGH_CLIENT_ERROR_RATE = 0.3;
+var DEFAULT_HIGH_NETWORK_ERROR_RATE = 0.15;
+var DEFAULT_HIGH_TIMEOUT_RATE = 0.15;
+var DEFAULT_HEALTHY_ERROR_RATE_THRESHOLD = 0.05;
+var DEFAULT_HEALTHY_SLOW_REQUEST_RATE_THRESHOLD = 0.2;
 function now() {
     return new Date().getTime();
 }
+function numberOrDefault(value, fallback) {
+    return typeof value === 'number' ? value : fallback;
+}
 function createNetworkListener(options) {
     var resolvedOptions = options || {};
-    var slowRequestThresholdMs = resolvedOptions.slowRequestThresholdMs || DEFAULT_SLOW_REQUEST_THRESHOLD_MS;
-    var maxSamples = resolvedOptions.maxSamples || DEFAULT_MAX_SAMPLES;
-    var minimumSamplesToDiagnose = resolvedOptions.minimumSamplesToDiagnose || DEFAULT_MINIMUM_SAMPLES_TO_DIAGNOSE;
-    var timeoutThresholdMs = resolvedOptions.timeoutThresholdMs || DEFAULT_TIMEOUT_THRESHOLD_MS;
+    var slowRequestThresholdMs = numberOrDefault(resolvedOptions.slowRequestThresholdMs, DEFAULT_SLOW_REQUEST_THRESHOLD_MS);
+    var maxSamples = numberOrDefault(resolvedOptions.maxSamples, DEFAULT_MAX_SAMPLES);
+    var minimumSamplesToDiagnose = numberOrDefault(resolvedOptions.minimumSamplesToDiagnose, DEFAULT_MINIMUM_SAMPLES_TO_DIAGNOSE);
+    var timeoutThresholdMs = numberOrDefault(resolvedOptions.timeoutThresholdMs, DEFAULT_TIMEOUT_THRESHOLD_MS);
+    var widespreadAffectedEndpointRatio = numberOrDefault(resolvedOptions.widespreadAffectedEndpointRatio, DEFAULT_WIDESPREAD_AFFECTED_ENDPOINT_RATIO);
+    var specificEndpointRatioThreshold = numberOrDefault(resolvedOptions.specificEndpointRatioThreshold, DEFAULT_SPECIFIC_ENDPOINT_RATIO_THRESHOLD);
+    var highServerErrorRate = numberOrDefault(resolvedOptions.highServerErrorRate, DEFAULT_HIGH_SERVER_ERROR_RATE);
+    var highClientErrorRate = numberOrDefault(resolvedOptions.highClientErrorRate, DEFAULT_HIGH_CLIENT_ERROR_RATE);
+    var highNetworkErrorRate = numberOrDefault(resolvedOptions.highNetworkErrorRate, DEFAULT_HIGH_NETWORK_ERROR_RATE);
+    var highTimeoutRate = numberOrDefault(resolvedOptions.highTimeoutRate, DEFAULT_HIGH_TIMEOUT_RATE);
+    var healthyErrorRateThreshold = numberOrDefault(resolvedOptions.healthyErrorRateThreshold, DEFAULT_HEALTHY_ERROR_RATE_THRESHOLD);
+    var healthySlowRequestRateThreshold = numberOrDefault(resolvedOptions.healthySlowRequestRateThreshold, DEFAULT_HEALTHY_SLOW_REQUEST_RATE_THRESHOLD);
     var routeNormalizer = resolvedOptions.routeNormalizer || routeNormalizer_1.defaultRouteNormalizer;
     var store = (0, metricsStore_1.createMetricsStore)({
         maxSamples: maxSamples,
@@ -37,6 +56,14 @@ function createNetworkListener(options) {
         return (0, ruleEngine_1.diagnoseNetwork)(store.getEvents(), {
             minimumSamplesToDiagnose: minimumSamplesToDiagnose,
             slowRequestThresholdMs: slowRequestThresholdMs,
+            widespreadAffectedEndpointRatio: widespreadAffectedEndpointRatio,
+            specificEndpointRatioThreshold: specificEndpointRatioThreshold,
+            highServerErrorRate: highServerErrorRate,
+            highClientErrorRate: highClientErrorRate,
+            highNetworkErrorRate: highNetworkErrorRate,
+            highTimeoutRate: highTimeoutRate,
+            healthyErrorRateThreshold: healthyErrorRateThreshold,
+            healthySlowRequestRateThreshold: healthySlowRequestRateThreshold,
         });
     }
     function notify() {

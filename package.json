@@ -1,6 +1,6 @@
 {
   "name": "@henrique-olivier/network-listener",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "POC de uma biblioteca leve para observar requisicoes HTTP e gerar diagnosticos provaveis.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

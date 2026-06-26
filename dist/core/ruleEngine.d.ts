@@ -1,5 +1,5 @@
-import { NetworkDiagnosis, NetworkRequestEvent } from './types';
-export type RuleEngineOptions = {
+import { NetworkListenerConfig, NetworkDiagnosis, NetworkRequestEvent } from './types';
+export type RuleEngineOptions = Partial<NetworkListenerConfig> & {
     minimumSamplesToDiagnose: number;
     slowRequestThresholdMs: number;
 };

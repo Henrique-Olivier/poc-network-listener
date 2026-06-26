@@ -17,12 +17,16 @@ export type NetworkRequestEvent = {
     aborted: boolean;
 };
 export type NetworkStatus = 'good' | 'degraded' | 'poor' | 'offline' | 'unknown';
-export type ProbableCause = 'client-network' | 'specific-endpoint' | 'backend' | 'infrastructure' | 'frontend-or-device' | 'unknown';
+export type ProbableCause = 'client-network' | 'client-network-or-infrastructure' | 'specific-endpoint' | 'client-request' | 'backend' | 'infrastructure' | 'frontend-or-device' | 'unknown';
 export type ConfidenceLevel = 'low' | 'medium' | 'high';
 export type NetworkSummary = {
     requestCount: number;
     errorRate: number;
+    clientErrorRate: number;
+    serverErrorRate: number;
+    networkErrorRate: number;
     timeoutRate: number;
+    abortedRate: number;
     slowRequestRate: number;
     medianDurationMs: number;
     p95DurationMs: number;
@@ -49,12 +53,32 @@ export type NetworkDiagnosis = {
     affectedEndpoints: EndpointDiagnosis[];
 };
 export type RouteNormalizer = (url: string) => string;
+export type NetworkListenerConfig = {
+    minimumSamplesToDiagnose: number;
+    slowRequestThresholdMs: number;
+    widespreadAffectedEndpointRatio: number;
+    specificEndpointRatioThreshold: number;
+    highServerErrorRate: number;
+    highClientErrorRate: number;
+    highNetworkErrorRate: number;
+    highTimeoutRate: number;
+    healthyErrorRateThreshold: number;
+    healthySlowRequestRateThreshold: number;
+};
 export type NetworkListenerOptions = {
     slowRequestThresholdMs?: number;
     maxSamples?: number;
     minimumSamplesToDiagnose?: number;
     routeNormalizer?: RouteNormalizer;
     timeoutThresholdMs?: number;
+    widespreadAffectedEndpointRatio?: number;
+    specificEndpointRatioThreshold?: number;
+    highServerErrorRate?: number;
+    highClientErrorRate?: number;
+    highNetworkErrorRate?: number;
+    highTimeoutRate?: number;
+    healthyErrorRateThreshold?: number;
+    healthySlowRequestRateThreshold?: number;
 };
 export type NetworkListener = {
     start: () => void;

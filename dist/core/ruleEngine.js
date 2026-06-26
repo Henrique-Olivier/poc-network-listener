@@ -2,47 +2,35 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.diagnoseNetwork = void 0;
 var metricsStore_1 = require("./metricsStore");
-function countServerErrors(events) {
-    var count = 0;
-    var i;
-    var status;
-    for (i = 0; i < events.length; i += 1) {
-        status = events[i].status;
-        if (typeof status === 'number' && status >= 500) {
-            count += 1;
-        }
-    }
-    return count;
-}
-function countSlowRoutes(events, slowRequestThresholdMs) {
-    var routes = {};
-    var count = 0;
-    var i;
-    var route;
-    for (i = 0; i < events.length; i += 1) {
-        if (events[i].durationMs >= slowRequestThresholdMs) {
-            route = events[i].normalizedRoute;
-            if (!routes[route]) {
-                routes[route] = true;
-                count += 1;
-            }
-        }
-    }
-    return count;
-}
-function countRoutes(events) {
-    var routes = {};
-    var count = 0;
-    var i;
-    var route;
-    for (i = 0; i < events.length; i += 1) {
-        route = events[i].normalizedRoute;
-        if (!routes[route]) {
-            routes[route] = true;
-            count += 1;
-        }
-    }
-    return count;
+var DEFAULT_WIDESPREAD_AFFECTED_ENDPOINT_RATIO = 0.6;
+var DEFAULT_SPECIFIC_ENDPOINT_RATIO_THRESHOLD = 0.3;
+var DEFAULT_HIGH_SERVER_ERROR_RATE = 0.2;
+var DEFAULT_HIGH_CLIENT_ERROR_RATE = 0.3;
+var DEFAULT_HIGH_NETWORK_ERROR_RATE = 0.15;
+var DEFAULT_HIGH_TIMEOUT_RATE = 0.15;
+var DEFAULT_HEALTHY_ERROR_RATE_THRESHOLD = 0.05;
+var DEFAULT_HEALTHY_SLOW_REQUEST_RATE_THRESHOLD = 0.2;
+function resolveOptions(options) {
+    return {
+        minimumSamplesToDiagnose: options.minimumSamplesToDiagnose,
+        slowRequestThresholdMs: options.slowRequestThresholdMs,
+        widespreadAffectedEndpointRatio: typeof options.widespreadAffectedEndpointRatio === 'number'
+            ? options.widespreadAffectedEndpointRatio
+            : DEFAULT_WIDESPREAD_AFFECTED_ENDPOINT_RATIO,
+        specificEndpointRatioThreshold: typeof options.specificEndpointRatioThreshold === 'number'
+            ? options.specificEndpointRatioThreshold
+            : DEFAULT_SPECIFIC_ENDPOINT_RATIO_THRESHOLD,
+        highServerErrorRate: typeof options.highServerErrorRate === 'number' ? options.highServerErrorRate : DEFAULT_HIGH_SERVER_ERROR_RATE,
+        highClientErrorRate: typeof options.highClientErrorRate === 'number' ? options.highClientErrorRate : DEFAULT_HIGH_CLIENT_ERROR_RATE,
+        highNetworkErrorRate: typeof options.highNetworkErrorRate === 'number' ? options.highNetworkErrorRate : DEFAULT_HIGH_NETWORK_ERROR_RATE,
+        highTimeoutRate: typeof options.highTimeoutRate === 'number' ? options.highTimeoutRate : DEFAULT_HIGH_TIMEOUT_RATE,
+        healthyErrorRateThreshold: typeof options.healthyErrorRateThreshold === 'number'
+            ? options.healthyErrorRateThreshold
+            : DEFAULT_HEALTHY_ERROR_RATE_THRESHOLD,
+        healthySlowRequestRateThreshold: typeof options.healthySlowRequestRateThreshold === 'number'
+            ? options.healthySlowRequestRateThreshold
+            : DEFAULT_HEALTHY_SLOW_REQUEST_RATE_THRESHOLD,
+    };
 }
 function percentile(sortedValues, percentileValue) {
     var index;
@@ -156,42 +144,77 @@ function buildAffectedEndpoints(events, slowRequestThresholdMs) {
     });
     return result;
 }
-function buildDiagnosis(status, probableCause, confidenceLevel, reasons, events, slowRequestThresholdMs) {
+function buildDiagnosis(status, probableCause, confidenceLevel, reasons, events, slowRequestThresholdMs, affectedEndpoints) {
     return {
         status: status,
         probableCause: probableCause,
         confidenceLevel: confidenceLevel,
         reasons: reasons,
         summary: (0, metricsStore_1.calculateSummary)(events, slowRequestThresholdMs),
-        affectedEndpoints: buildAffectedEndpoints(events, slowRequestThresholdMs),
+        affectedEndpoints: affectedEndpoints || buildAffectedEndpoints(events, slowRequestThresholdMs),
     };
 }
 function diagnoseNetwork(events, options) {
-    var summary = (0, metricsStore_1.calculateSummary)(events, options.slowRequestThresholdMs);
-    var serverErrorRate;
-    var slowRouteCount;
-    var routeCount;
-    if (summary.requestCount < options.minimumSamplesToDiagnose) {
-        return buildDiagnosis('unknown', 'unknown', 'low', ['Not enough samples to diagnose network communication.'], events, options.slowRequestThresholdMs);
+    var config = resolveOptions(options);
+    var summary = (0, metricsStore_1.calculateSummary)(events, config.slowRequestThresholdMs);
+    var affectedEndpoints = buildAffectedEndpoints(events, config.slowRequestThresholdMs);
+    var affectedEndpointCount = affectedEndpoints.length;
+    var isWidespread = summary.affectedEndpointRatio >= config.widespreadAffectedEndpointRatio && affectedEndpointCount > 1;
+    var isSpecificEndpoint = affectedEndpointCount === 1 ||
+        (affectedEndpointCount > 0 && summary.affectedEndpointRatio <= config.specificEndpointRatioThreshold);
+    var hasHighServerErrors = summary.serverErrorRate >= config.highServerErrorRate;
+    var hasHighClientErrors = summary.clientErrorRate >= config.highClientErrorRate;
+    var hasHighNetworkErrors = summary.networkErrorRate >= config.highNetworkErrorRate;
+    var hasHighTimeouts = summary.timeoutRate >= config.highTimeoutRate;
+    var hasMeaningfulSlowRequests = summary.slowRequestRate > config.healthySlowRequestRateThreshold;
+    var confidenceForSampleSize = summary.requestCount >= config.minimumSamplesToDiagnose * 2 ? 'high' : 'medium';
+    if (summary.requestCount < config.minimumSamplesToDiagnose) {
+        return buildDiagnosis('unknown', 'unknown', 'low', ['Not enough samples to diagnose network communication.'], events, config.slowRequestThresholdMs, affectedEndpoints);
     }
-    serverErrorRate = countServerErrors(events) / summary.requestCount;
-    slowRouteCount = countSlowRoutes(events, options.slowRequestThresholdMs);
-    routeCount = countRoutes(events);
-    if (summary.timeoutRate >= 0.5) {
-        return buildDiagnosis('poor', 'client-network', 'high', ['Many requests are timing out.'], events, options.slowRequestThresholdMs);
+    if (isWidespread && hasMeaningfulSlowRequests && hasHighServerErrors) {
+        return buildDiagnosis('poor', 'infrastructure', confidenceForSampleSize, [
+            'Several endpoints are degraded.',
+            'A significant server error rate was detected.',
+            'The pattern indicates a probable backend or infrastructure issue.',
+        ], events, config.slowRequestThresholdMs, affectedEndpoints);
     }
-    if (serverErrorRate >= 0.4) {
-        return buildDiagnosis('poor', 'backend', 'high', ['Many requests are failing with 5xx server errors.'], events, options.slowRequestThresholdMs);
+    if (isWidespread && (hasHighTimeouts || hasHighNetworkErrors) && !hasHighServerErrors) {
+        return buildDiagnosis('poor', 'client-network-or-infrastructure', 'medium', [
+            'Several endpoints are affected.',
+            'A significant timeout or network error rate was detected.',
+            'The available data is not sufficient to distinguish client network from infrastructure.',
+        ], events, config.slowRequestThresholdMs, affectedEndpoints);
     }
-    if (summary.slowRequestRate >= 0.5 && summary.affectedEndpointRatio >= 0.5 && slowRouteCount > 1) {
-        return buildDiagnosis(summary.slowRequestRate >= 0.75 ? 'poor' : 'degraded', 'infrastructure', 'medium', ['Several different endpoints are slow in the current sample window.'], events, options.slowRequestThresholdMs);
+    if (isSpecificEndpoint) {
+        return buildDiagnosis(hasHighTimeouts || hasHighNetworkErrors || hasHighServerErrors || hasHighClientErrors ? 'poor' : 'degraded', 'specific-endpoint', 'medium', ['The degradation is concentrated in a small set of endpoints.'], events, config.slowRequestThresholdMs, affectedEndpoints);
     }
-    if (summary.slowRequestRate >= 0.3 && slowRouteCount === 1 && routeCount > 1) {
-        return buildDiagnosis('degraded', 'specific-endpoint', 'medium', ['Only one endpoint concentrates slow requests.'], events, options.slowRequestThresholdMs);
+    if (isWidespread &&
+        hasMeaningfulSlowRequests &&
+        !hasHighServerErrors &&
+        !hasHighTimeouts &&
+        !hasHighNetworkErrors) {
+        return buildDiagnosis('degraded', 'client-network', 'medium', [
+            'Several different endpoints are slow in the current sample window.',
+            'Most requests completed successfully.',
+            'No significant server error rate was detected.',
+            'The pattern is compatible with a slow or limited client connection.',
+        ], events, config.slowRequestThresholdMs, affectedEndpoints);
     }
-    if (summary.errorRate >= 0.3) {
-        return buildDiagnosis('degraded', 'unknown', 'medium', ['A relevant share of requests is failing.'], events, options.slowRequestThresholdMs);
+    if (hasHighClientErrors && !hasMeaningfulSlowRequests) {
+        return buildDiagnosis('degraded', 'client-request', 'medium', [
+            'A significant client error rate was detected.',
+            'HTTP 4xx responses usually indicate request, authorization, validation, or routing issues.',
+        ], events, config.slowRequestThresholdMs, affectedEndpoints);
     }
-    return buildDiagnosis('good', 'unknown', 'high', ['Most requests in the current sample window are healthy.'], events, options.slowRequestThresholdMs);
+    if (hasHighServerErrors) {
+        return buildDiagnosis('poor', 'backend', confidenceForSampleSize, ['Many requests are failing with 5xx server errors.'], events, config.slowRequestThresholdMs, affectedEndpoints);
+    }
+    if (summary.slowRequestRate <= config.healthySlowRequestRateThreshold &&
+        summary.errorRate <= config.healthyErrorRateThreshold &&
+        summary.timeoutRate < config.highTimeoutRate &&
+        summary.networkErrorRate < config.highNetworkErrorRate) {
+        return buildDiagnosis('good', 'unknown', confidenceForSampleSize, ['Most requests in the current sample window are healthy.'], events, config.slowRequestThresholdMs, affectedEndpoints);
+    }
+    return buildDiagnosis('unknown', 'unknown', 'low', ['The current sample window does not match a confident diagnosis rule.'], events, config.slowRequestThresholdMs, affectedEndpoints);
 }
 exports.diagnoseNetwork = diagnoseNetwork;

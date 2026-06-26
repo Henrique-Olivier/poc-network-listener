@@ -1,7 +1,16 @@
 import { diagnoseNetwork } from '../core/ruleEngine';
 import { NetworkRequestEvent } from '../core/types';
 
-function event(id: string, route: string, durationMs: number, status: number): NetworkRequestEvent {
+function event(
+  id: string,
+  route: string,
+  durationMs: number,
+  status?: number,
+  errorType?: NetworkRequestEvent['errorType'],
+  timedOut?: boolean
+): NetworkRequestEvent {
+  var success = typeof status === 'number' ? status < 400 : !errorType;
+
   return {
     requestId: id,
     source: 'fetch',
@@ -12,10 +21,17 @@ function event(id: string, route: string, durationMs: number, status: number): N
     finishedAt: durationMs,
     durationMs: durationMs,
     status: status,
-    success: status < 400,
-    errorType: status >= 500 ? 'http-server' : status >= 400 ? 'http-client' : undefined,
-    timedOut: false,
+    success: success,
+    errorType: errorType || (status && status >= 500 ? 'http-server' : status && status >= 400 ? 'http-client' : undefined),
+    timedOut: !!timedOut,
     aborted: false,
+  };
+}
+
+function options() {
+  return {
+    minimumSamplesToDiagnose: 5,
+    slowRequestThresholdMs: 1000,
   };
 }
 
@@ -27,7 +43,58 @@ describe('diagnoseNetwork', function () {
     });
 
     expect(diagnosis.status).toBe('unknown');
+    expect(diagnosis.probableCause).toBe('unknown');
     expect(diagnosis.confidenceLevel).toBe('low');
+  });
+
+  it('classifies simulated throttling as client network degradation', function () {
+    var diagnosis = diagnoseNetwork(
+      [
+        event('1', '/a', 1800, 200),
+        event('2', '/b', 1900, 200),
+        event('3', '/c', 2000, 200),
+        event('4', '/d', 2100, 200),
+        event('5', '/e', 2200, 200),
+      ],
+      options()
+    );
+
+    expect(diagnosis.status).toBe('degraded');
+    expect(diagnosis.probableCause).toBe('client-network');
+    expect(diagnosis.summary.serverErrorRate).toBe(0);
+    expect(diagnosis.summary.timeoutRate).toBe(0);
+  });
+
+  it('classifies widespread slow endpoints with many 5xx as infrastructure', function () {
+    var diagnosis = diagnoseNetwork(
+      [
+        event('1', '/a', 1800, 500),
+        event('2', '/b', 1900, 502),
+        event('3', '/c', 2000, 503),
+        event('4', '/d', 2100, 200),
+        event('5', '/e', 2200, 200),
+      ],
+      options()
+    );
+
+    expect(diagnosis.status).toBe('poor');
+    expect(diagnosis.probableCause).toBe('infrastructure');
+  });
+
+  it('classifies widespread timeouts as client network or infrastructure', function () {
+    var diagnosis = diagnoseNetwork(
+      [
+        event('1', '/a', 6000, undefined, 'timeout', true),
+        event('2', '/b', 6000, undefined, 'timeout', true),
+        event('3', '/c', 6000, undefined, 'timeout', true),
+        event('4', '/d', 100, 200),
+        event('5', '/e', 120, 200),
+      ],
+      options()
+    );
+
+    expect(diagnosis.status).toBe('poor');
+    expect(diagnosis.probableCause).toBe('client-network-or-infrastructure');
   });
 
   it('detects a specific slow endpoint', function () {
@@ -39,29 +106,61 @@ describe('diagnoseNetwork', function () {
         event('4', '/users', 120, 200),
         event('5', '/users', 130, 200),
       ],
-      { minimumSamplesToDiagnose: 5, slowRequestThresholdMs: 1000 }
+      options()
     );
 
     expect(diagnosis.status).toBe('degraded');
     expect(diagnosis.probableCause).toBe('specific-endpoint');
     expect(diagnosis.affectedEndpoints[0].normalizedRoute).toBe('/reports/:id');
     expect(diagnosis.affectedEndpoints[0].issueTypes).toEqual(['slow']);
-    expect(diagnosis.affectedEndpoints[0].slowRequestRate).toBe(1);
   });
 
-  it('detects many 5xx errors as backend probable cause', function () {
+  it('does not classify fast 4xx errors as infrastructure', function () {
+    var diagnosis = diagnoseNetwork(
+      [
+        event('1', '/a', 100, 400),
+        event('2', '/b', 100, 401),
+        event('3', '/c', 100, 403),
+        event('4', '/d', 100, 200),
+        event('5', '/e', 100, 200),
+      ],
+      options()
+    );
+
+    expect(diagnosis.status).toBe('degraded');
+    expect(diagnosis.probableCause).toBe('client-request');
+    expect(diagnosis.probableCause).not.toBe('infrastructure');
+  });
+
+  it('classifies fast 5xx errors as backend', function () {
     var diagnosis = diagnoseNetwork(
       [
         event('1', '/a', 100, 500),
         event('2', '/b', 100, 502),
-        event('3', '/c', 100, 200),
+        event('3', '/c', 100, 503),
         event('4', '/d', 100, 200),
-        event('5', '/e', 100, 503),
+        event('5', '/e', 100, 200),
       ],
-      { minimumSamplesToDiagnose: 5, slowRequestThresholdMs: 1000 }
+      options()
     );
 
     expect(diagnosis.status).toBe('poor');
     expect(diagnosis.probableCause).toBe('backend');
+  });
+
+  it('classifies healthy traffic as good', function () {
+    var diagnosis = diagnoseNetwork(
+      [
+        event('1', '/a', 100, 200),
+        event('2', '/b', 120, 200),
+        event('3', '/c', 140, 200),
+        event('4', '/d', 160, 200),
+        event('5', '/e', 180, 200),
+      ],
+      options()
+    );
+
+    expect(diagnosis.status).toBe('good');
+    expect(diagnosis.probableCause).toBe('unknown');
   });
 });

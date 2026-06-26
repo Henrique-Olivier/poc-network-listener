@@ -5,7 +5,11 @@ function createEmptySummary() {
     return {
         requestCount: 0,
         errorRate: 0,
+        clientErrorRate: 0,
+        serverErrorRate: 0,
+        networkErrorRate: 0,
         timeoutRate: 0,
+        abortedRate: 0,
         slowRequestRate: 0,
         medianDurationMs: 0,
         p95DurationMs: 0,
@@ -26,7 +30,11 @@ function percentile(sortedValues, percentileValue) {
 function calculateSummary(events, slowRequestThresholdMs) {
     var total = events.length;
     var errors = 0;
+    var clientErrors = 0;
+    var serverErrors = 0;
+    var networkErrors = 0;
     var timeouts = 0;
+    var aborted = 0;
     var slow = 0;
     var durations = [];
     var endpoints = {};
@@ -45,8 +53,28 @@ function calculateSummary(events, slowRequestThresholdMs) {
         route = event.normalizedRoute;
         affected = false;
         durations.push(event.durationMs);
-        if (!event.success) {
+        if (event.aborted) {
+            aborted += 1;
+            affected = true;
+        }
+        if (!event.success && !event.aborted) {
             errors += 1;
+            affected = true;
+        }
+        if (typeof event.status === 'number' && event.status >= 400 && event.status < 500) {
+            clientErrors += 1;
+            affected = true;
+        }
+        if (typeof event.status === 'number' && event.status >= 500) {
+            serverErrors += 1;
+            affected = true;
+        }
+        if (!event.success &&
+            !event.timedOut &&
+            !event.aborted &&
+            typeof event.status !== 'number' &&
+            (event.errorType === 'network' || event.errorType === 'unknown' || !event.errorType)) {
+            networkErrors += 1;
             affected = true;
         }
         if (event.timedOut) {
@@ -72,7 +100,11 @@ function calculateSummary(events, slowRequestThresholdMs) {
     return {
         requestCount: total,
         errorRate: errors / total,
+        clientErrorRate: clientErrors / total,
+        serverErrorRate: serverErrors / total,
+        networkErrorRate: networkErrors / total,
         timeoutRate: timeouts / total,
+        abortedRate: aborted / total,
         slowRequestRate: slow / total,
         medianDurationMs: percentile(durations, 50),
         p95DurationMs: percentile(durations, 95),
