@@ -1,7 +1,7 @@
 {
   "name": "@henrique-olivier/network-listener",
-  "version": "0.1.2",
-  "description": "POC de uma biblioteca leve para observar requisicoes HTTP e gerar diagnosticos provaveis.",
+  "version": "0.1.3",
+  "description": "Lightweight frontend network diagnostics for fetch and Axios.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

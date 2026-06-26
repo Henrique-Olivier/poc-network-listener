@@ -1,20 +1,12 @@
-# Network Listener
+# @henrique-olivier/network-listener
 
-POC de uma biblioteca leve e agnostica de framework para observar requisicoes HTTP no front-end e produzir diagnosticos provaveis sobre lentidao, erro ou instabilidade.
+Biblioteca leve para observar requisicoes HTTP reais no front-end e gerar diagnosticos provaveis sobre lentidao, erro ou instabilidade.
 
-## Objetivos
-
-- observar requisicoes feitas via `fetch`;
-- observar requisicoes feitas via Axios;
-- manter uma janela das ultimas requisicoes em memoria;
-- normalizar rotas para reduzir exposicao de dados sensiveis;
-- calcular metricas simples;
-- classificar o estado atual da comunicacao;
-- expor uma API simples para qualquer front-end, inclusive projetos legados.
+Funciona sem React, sem hooks e sem acoplamento com framework. O foco e ser simples de instalar em projetos legados e seguro por padrao: a lib nao le payloads, headers sensiveis, cookies ou body de resposta.
 
 ## Compatibilidade
 
-O build da POC foi configurado para:
+O pacote publicado foi configurado para:
 
 - CommonJS;
 - JavaScript ES5;
@@ -23,6 +15,12 @@ O build da POC foi configurado para:
 - sem dependencia obrigatoria de Axios;
 - sem polyfills globais;
 - sem leitura de body de request ou response.
+
+## Instalacao
+
+```bash
+npm install @henrique-olivier/network-listener
+```
 
 ## Uso
 
@@ -44,10 +42,26 @@ const unsubscribe = listener.subscribe(function (diagnosis) {
 
 listener.start();
 
-// Depois, quando nao precisar mais observar:
+// Quando nao precisar mais observar:
 listener.stop();
 unsubscribe();
 ```
+
+## Opcoes
+
+```ts
+createNetworkListener({
+  maxSamples: 20,
+  slowRequestThresholdMs: 1500,
+  minimumSamplesToDiagnose: 5,
+  timeoutThresholdMs: 30000,
+});
+```
+
+- `maxSamples`: tamanho da janela em memoria.
+- `slowRequestThresholdMs`: tempo minimo para uma request ser considerada lenta.
+- `minimumSamplesToDiagnose`: minimo de amostras antes de diagnosticar.
+- `timeoutThresholdMs`: duracao usada para marcar uma request como timeout provavel.
 
 ## Diagnostico
 
@@ -93,6 +107,12 @@ Exemplo de retorno:
   ]
 }
 ```
+
+## Endpoints afetados
+
+Quando o diagnostico encontra lentidao ou erro concentrado em rotas especificas, o payload inclui `affectedEndpoints`.
+
+Esse campo pode ser usado pela aplicacao para mostrar alertas, logs de debug ou uma mensagem amigavel ao usuario sem expor URL completa, query string, payload ou headers.
 
 ## Privacidade
 
